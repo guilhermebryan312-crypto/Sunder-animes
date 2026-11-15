@@ -28,31 +28,98 @@ jobs:
           gradle-version: '8.9'
 
       - name: Extrair ZIP automaticamente
+        shell: bash
         run: |
+          set -e
           mkdir -p source
-          ZIP=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+
+          ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
+
           if [ -z "$ZIP" ]; then
-            echo "ZIP do projeto não encontrado"
+            echo "ERRO: ZIP do projeto não encontrado."
             exit 1
           fi
+
+          echo "Extraindo: $ZIP"
           unzip -q "$ZIP" -d source
 
       - name: Localizar projeto Android
+        shell: bash
         run: |
-          SETTINGS=$(find source -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          set -e
+
+          SETTINGS=$(find source -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) -print -quit)
+
           if [ -z "$SETTINGS" ]; then
-            echo "settings.gradle não encontrado"
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
+
           PROJECT_DIR=$(dirname "$SETTINGS")
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERRO: app/build.gradle não encontrado."
+            exit 1
+          fi
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo "Projeto encontrado em: $PROJECT_DIR"
+
+      - name: Corrigir compatibilidade Java e Kotlin
+        shell: bash
+        run: |
+          set -e
+
+          APP_GRADLE="$PROJECT_DIR/app/build.gradle"
+
+          cat >> "$APP_GRADLE" <<'GRADLE'
+
+          android {
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+          GRADLE
+
+          echo "Compatibilidade configurada para Java 17 e Kotlin 17."
+
       - name: Compilar APK
-        run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
+        run: |
+          gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
+
+      - name: Verificar e organizar APK
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p dist
+
+          APK=$(find "$PROJECT_DIR/app/build/outputs/apk/debug" \
+            -type f -name "*.apk" -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          cp "$APK" dist/Sunder-Animes-debug.apk
+
+          echo "APK gerado:"
+          ls -lh dist/
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: build
-          path: source/**/app/build/outputs/apk/debug/*.apk
+          path: dist/Sunder-Animes-debug.apk
           if-no-files-found: error
+          retention-days: 7
