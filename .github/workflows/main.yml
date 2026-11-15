@@ -27,12 +27,32 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Extrair ZIP automaticamente
+        run: |
+          mkdir -p source
+          ZIP=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "ZIP do projeto não encontrado"
+            exit 1
+          fi
+          unzip -q "$ZIP" -d source
+
+      - name: Localizar projeto Android
+        run: |
+          SETTINGS=$(find source -name settings.gradle -o -name settings.gradle.kts | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle não encontrado"
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Compilar APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle -p "$PROJECT_DIR" assembleDebug --stacktrace
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: build
-          path: app/build/outputs/apk/debug/*.apk
+          path: source/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
